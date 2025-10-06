@@ -38,6 +38,14 @@ app.add_middleware(
 app.include_router(chat.router, tags=["chat"])
 app.include_router(items.router, tags=["items"])
 
+# Import analysis router dynamically to avoid circular imports
+try:
+    from app.api.routes import analysis
+
+    app.include_router(analysis.router, prefix="/api", tags=["analysis"])
+except ImportError:
+    pass  # Analysis router not available
+
 
 @app.get("/")
 def read_root():
