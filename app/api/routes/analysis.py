@@ -114,58 +114,103 @@ async def stream_analysis_progress(task_id: str):
     """
 
     async def event_generator():
+        """Generate SSE events with task progress updates"""
         task_result = AsyncResult(task_id, app=celery_app)
-        last_state = None
+        last_info = None
+        iterations = 0
+        max_iterations = 600  # 10 minutes with 1s sleep
 
-        while True:
-            current_state = task_result.state
+        try:
+            while iterations < max_iterations:
+                current_state = task_result.state
+                current_info = task_result.info or {}
 
-            # Send update if state changed
-            if current_state != last_state:
-                if current_state == "PENDING":
-                    data = {
-                        "state": "PENDING",
-                        "message": "Task is queued",
-                        "progress": 0,
-                    }
-                elif current_state == "PROGRESS":
-                    info = task_result.info or {}
-                    data = {
-                        "state": "PROGRESS",
-                        "phase": info.get("phase"),
-                        "status": info.get("status"),
-                        "message": info.get("message"),
-                        "progress": info.get("progress", 0),
-                    }
-                elif current_state == "SUCCESS":
-                    data = {
-                        "state": "SUCCESS",
-                        "message": "✅ Analysis completed",
-                        "progress": 100,
-                        "result": task_result.result,
-                    }
+                # Create a hashable representation for comparison
+                info_key = (
+                    current_state,
+                    current_info.get("phase"),
+                    current_info.get("progress"),
+                    current_info.get("status"),
+                )
+
+                # Send update if anything changed OR every 5 seconds as heartbeat
+                should_send = (info_key != last_info) or (iterations % 5 == 0)
+
+                if should_send:
+                    if current_state == "PENDING":
+                        data = {
+                            "state": "PENDING",
+                            "message": "Task is queued",
+                            "progress": 0,
+                        }
+                    elif current_state == "PROGRESS":
+                        data = {
+                            "state": "PROGRESS",
+                            "phase": current_info.get("phase"),
+                            "status": current_info.get("status"),
+                            "message": current_info.get("message"),
+                            "progress": current_info.get("progress", 0),
+                        }
+                    elif current_state == "SUCCESS":
+                        data = {
+                            "state": "SUCCESS",
+                            "message": "Analysis completed",
+                            "progress": 100,
+                            "result": task_result.result,
+                        }
+                        yield f"data: {json.dumps(data)}\n\n"
+                        break  # Stop streaming
+                    elif current_state == "FAILURE":
+                        data = {
+                            "state": "FAILURE",
+                            "message": "Analysis failed",
+                            "error": str(current_info),
+                        }
+                        yield f"data: {json.dumps(data)}\n\n"
+                        break  # Stop streaming
+                    else:
+                        # Unknown state
+                        data = {
+                            "state": current_state,
+                            "message": f"Task state: {current_state}",
+                        }
+
                     yield f"data: {json.dumps(data)}\n\n"
-                    break  # Stop streaming
-                elif current_state == "FAILURE":
-                    data = {
-                        "state": "FAILURE",
-                        "message": "❌ Analysis failed",
-                        "error": str(task_result.info),
-                    }
-                    yield f"data: {json.dumps(data)}\n\n"
-                    break  # Stop streaming
+                    last_info = info_key
 
-                yield f"data: {json.dumps(data)}\n\n"
-                last_state = current_state
+                # Check if task is complete
+                if current_state in ["SUCCESS", "FAILURE"]:
+                    break
 
-            # Wait before checking again
-            await asyncio.sleep(1)
+                # Wait before next check
+                await asyncio.sleep(1)
+                iterations += 1
 
-            # Timeout after 10 minutes
-            if task_result.state in ["SUCCESS", "FAILURE"]:
-                break
+            # Send timeout message if it's exceeded max iterations
+            if iterations >= max_iterations:
+                timeout_data = {
+                    "state": "TIMEOUT",
+                    "message": "Streaming timeout reached",
+                }
+                yield f"data: {json.dumps(timeout_data)}\n\n"
 
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
+        except Exception as e:
+            logger.error(f"Error in SSE stream for task {task_id}: {str(e)}")
+            error_data = {
+                "state": "ERROR",
+                "message": f"Stream error: {str(e)}",
+            }
+            yield f"data: {json.dumps(error_data)}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",  # Disable nginx buffering
+            "Connection": "keep-alive",
+        },
+    )
 
 
 @router.delete("/analysis/cancel/{task_id}")
