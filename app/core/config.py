@@ -17,6 +17,9 @@ class Settings:
     # OpenAI
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
 
+    # Tavily
+    TAVILY_API_KEY: str = os.getenv("TAVILY_API_KEY", "")
+
     # Database
     DATABASE_URL: str = os.getenv("DATABASE_URL", "")
     DIRECT_URL: str = os.getenv("DIRECT_URL", "")
