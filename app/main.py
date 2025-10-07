@@ -5,7 +5,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from app.core.config import settings
 from app.core.database import connect_db, disconnect_db
-from app.api.routes import chat, items
+from app.api.routes import chat, items, analysis
 from app.api.dependencies import limiter
 
 
@@ -37,14 +37,7 @@ app.add_middleware(
 # Include routers
 app.include_router(chat.router, tags=["chat"])
 app.include_router(items.router, tags=["items"])
-
-# Import analysis router dynamically to avoid circular imports
-try:
-    from app.api.routes import analysis
-
-    app.include_router(analysis.router, prefix="/api", tags=["analysis"])
-except ImportError:
-    pass  # Analysis router not available
+app.include_router(analysis.router, tags=["analysis"])
 
 
 @app.get("/")
