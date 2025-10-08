@@ -1,12 +1,9 @@
 import json
-from openai import AsyncOpenAI
-from app.core.config import settings
+from app.llm.utils import openai_client
 from app.schemas.chat import ChatRequest
 from app.core.prompts import build_system_prompt_with_context
 from app.services.token_service import get_recent_tokens, build_token_context
 from app.core.tools import TOOLS, execute_function
-
-client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
 
 
 async def stream_chat_completion(request: ChatRequest):
@@ -26,7 +23,7 @@ async def stream_chat_completion(request: ChatRequest):
     messages = [{"role": "system", "content": system_prompt}] + request.messages
 
     # Initial API call with tools
-    response = await client.chat.completions.create(
+    response = await openai_client.chat.completions.create(
         model=request.model,
         messages=messages,
         temperature=request.temperature,
@@ -42,7 +39,7 @@ async def stream_chat_completion(request: ChatRequest):
     # If no tool calls, stream the response
     if not tool_calls:
         # Re-run with streaming for the final response
-        stream = await client.chat.completions.create(
+        stream = await openai_client.chat.completions.create(
             model=request.model,
             messages=messages,
             temperature=request.temperature,
@@ -75,7 +72,7 @@ async def stream_chat_completion(request: ChatRequest):
         )
 
     # Get final response with function results and stream it
-    stream = await client.chat.completions.create(
+    stream = await openai_client.chat.completions.create(
         model=request.model,
         messages=messages,
         temperature=request.temperature,

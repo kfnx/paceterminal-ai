@@ -1,4 +1,5 @@
 """Token service for fetching token data from database."""
+
 from typing import Optional
 from app.core.database import db
 
